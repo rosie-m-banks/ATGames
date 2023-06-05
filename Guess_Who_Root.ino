@@ -103,7 +103,7 @@ void loop() {
   //request i2c data
   if (!endGame){
     Wire.requestFrom(1, 0);
-    while(Wire.available){
+    while(Wire.available()){
       endGame = Wire.read(); 
       if (endGame) startTime = millis();
     }    
