@@ -1,6 +1,5 @@
 ////////////////////////////////////////////////////////////////I2C STUFF
 #include <Wire.h>
-
 bool endGame = false;
 bool appearsToBeEnded = false; 
 int startTime;
@@ -49,10 +48,10 @@ int32_t              width  = 0, // BMP image dimensions
 void setup() {
   ImageReturnCode stat;
   tft.init(240, 320);
-  if(!SD.begin(SD_CS, SD_SCK_MHZ(10))) { // Breakouts require 10 MHz limit due to longer wires
+  /*if(!SD.begin(SD_CS, SD_SCK_MHZ(10))) { // Breakouts require 10 MHz limit due to longer wires
     Serial.println(F("SD begin() failed"));
     for(;;); // Fatal error, do not continue
-  }
+  }*/
   Wire.begin(0);
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
@@ -129,13 +128,13 @@ void reset(){
   prevRight = 1;
   prevTogg = 1;
   cursorVal = 0;
-  endGame = false;
-  appearsToBeEnded = false;
   character = random(0, 24);
   for (int i = 0; i < LED_COUNT; i++){
     onOffState[i] = false;
   }
   reFlashArray(cursorVal);
+  endGame = false;
+  appearsToBeEnded = false;
   const char* myBmp = bmpArr[character].c_str();  
   reader.drawBMP(myBmp, tft, 0, 0);  
   delay(500);
