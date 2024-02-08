@@ -11,6 +11,38 @@ Adafruit_DotStar dot = Adafruit_DotStar(1, 41, 40, DOTSTAR_BGR);
 
 #define BRIGHTNESS 155
 
+///////////////////////////////////////////////////////////////////SOUND
+#include <Arduino.h>
+#include "wiring_private.h" // pinPeripheral() function
+Uart mySerial (&sercom2, 3, 4, SERCOM_RX_PAD_1, UART_TX_PAD_0);
+void SERCOM2_Handler()
+{
+  mySerial.IrqHandler();
+}
+//SoftwareSerial mySerial(2, 3); // RX, TX... D5 goes to 3rd pin down, D6 goes to 2nd pin down from top
+
+void sendCmd(int cmd, int lb, int hb, bool reply = false)
+{ // standard format for module command stream
+  uint8_t buf[] = {0x7E, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0xEF};
+  int16_t chksum = 0;
+  int idx = 3; // position of first command byte
+
+  buf[idx++] = (uint8_t)cmd; // inject command byte in buffer
+  if (reply) buf[idx++] = 0x01;
+  else buf[idx++] = 0x00;// set if reply is needed/wanted
+  if (hb >= 0) // if there is a high byte data field
+  buf[idx++] = (uint8_t)hb; // add it to the buffer
+  if (lb >= 0) // if there is a low byte data field
+  buf[idx++] = (uint8_t)lb; // add it to the buffer
+  buf[2] = idx - 1; // inject command length into buffer
+  buf[idx++] = 0xEF; // place end-of-command byte
+
+  mySerial.write(buf, idx); // send the command to module
+  // for (int i = 0; i < idx; i++) // send command as hex string to MCU
+  // Serial.printf("%02X ", buf[i]);
+  // Serial.println();
+}
+
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN);
 const int rows = 7;
 const int columns = 6;
@@ -38,6 +70,7 @@ bool canGo = false;
 bool gameEnd;
 int winner = 0;
 bool initialize;
+bool playSound = true;
 void setup() {
   dot.begin();
   dot.show();
@@ -71,7 +104,28 @@ void setup() {
     if (i < 42) remap[row][col][0] = i;
   }
   Serial.begin(9600);
+  delay(2000); //Allow Serial to start up
+
+  Serial.println("starting ");
+  mySerial.begin(9600); //communicate with DF Player
+  pinPeripheral(3, PIO_SERCOM_ALT);
+  pinPeripheral(4, PIO_SERCOM_ALT);
+  delay(3000); //Allow SoftwareSerial to start up
+
+  Serial.println("Stop anything playing"); //in case anything is already playing on reset
+  sendCmd(0x0E, 0, 0, false);
+  delay(200); //give a delay for the DF Player to execute the command
+
+  Serial.println("Now volume ");
+  sendCmd(6, 5, 0, false); //command code can be in decimal too.
+
+  Serial.println("Starting Player");
+
+  Serial.println("Stop anything playing"); //in case anything is already playing on reset
+  sendCmd(0x0E, 0, 0, false);
+  delay(200); //give a delay for the DF Player to execute the command
   reset();
+  playSound = true;
 }
 
 void loop() {
@@ -80,7 +134,7 @@ void loop() {
   if (winner == 1){
     gameEnd = true;
     color(1);
-    Serial.println("reset");
+    //Serial.println("reset");
     if (prevCursorP2 == 0 && digitalRead(cursorP2) == 1){
       playerOneTurn = false;
       reset();
@@ -89,7 +143,7 @@ void loop() {
   if (winner == 2){
     gameEnd = true;
     color(2);
-    Serial.println("reset");
+    //Serial.println("reset");
     if (prevCursorP1 == 0 && digitalRead(cursorP1) == 1){
       playerOneTurn = true;
       reset();
@@ -114,10 +168,12 @@ void loop() {
       move(iVal, 1);
     }
     prevCursorP1 = digitalRead(cursorP1);
-    if (prevDropP1 == 1 && digitalRead(dropP1) == 0 && !pixelState[iVal][columns-1] && canGo){
+    if (prevDropP1 == 0 && digitalRead(dropP1) == 1 && !pixelState[iVal][columns-1] && canGo){
       canGo = false;
       dropRow(iVal, 1); //make animation
       playerOneTurn = false;
+      sendCmd(0x03, 2, 0, false); //play track 002 in folder 01   
+      Serial.println("im getting called");         
       iVal = -1;
     }
     prevDropP1 = digitalRead(dropP1);
@@ -130,20 +186,34 @@ void loop() {
       move(iVal, 2);
     }
     prevCursorP2 = digitalRead(cursorP2);
-    if (prevDropP2 == 1 && digitalRead(dropP2) == 0 && !pixelState[iVal][columns-1] && canGo){
+    if (prevDropP2 == 0 && digitalRead(dropP2) == 1 && !pixelState[iVal][columns-1] && canGo){
       canGo = false;
       dropRow(iVal, 2); //make animation
       playerOneTurn = true;
+      sendCmd(0x03, 2, 0, false); //play track 002 in folder 01
+      Serial.println("im getting called");
       iVal = -1;
     }
     prevDropP2 = digitalRead(dropP2);
   }
+
+  //Serial.println(playSound);
+  if (gameEnd && playSound){
+    Serial.println("Stop anything playing"); //in case anything is already playing on reset
+    sendCmd(0x0E, 0, 0, false);
+    delay(200); //give a delay for the DF Player to execute the command
+    sendCmd(0x03, 3, 0, false); //play track 003 in folder 01
+    Serial.println("now me");
+    delay(200);
+    playSound = false;
+  }   
   
   delay(50);
 
 }
 
 void dropRow(int dropSpot, int color){
+  sendCmd(0x03, 1, 0, false); //play track 003 in folder 01
   sel[dropSpot] = 0;  
   int fast = 0;
   for (int i = columns-1; i >= 0; i--){
@@ -180,6 +250,10 @@ void reset(){
   initialize = false;
   winner = 0;
   reFlashArray();
+  Serial.println("Stop anything playing"); //in case anything is already playing on reset
+  sendCmd(0x0E, 0, 0, false);
+  delay(200); //give a delay for the DF Player to execute the command
+  playSound = true;
 }
 
 int winCheck(){
@@ -210,10 +284,10 @@ int winCheck(){
 void reFlashArray(){
   for (int i = 0; i < rows; i++){
     if (sel[i] == 0) strip.setPixelColor(selector[i], strip.Color(0,0,0));
-    if (sel[i] == 1) strip.setPixelColor(selector[i], strip.Color(56,56,177));
-    if (sel[i] == 2) strip.setPixelColor(selector[i], strip.Color(62,184,91)); 
-    //blue rgb = rgba(56,56,177) 
-    //red rgb =  rgba(184,62,91)
+    if (sel[i] == 1) strip.setPixelColor(selector[i], strip.Color(20,25,255));
+    if (sel[i] == 2) strip.setPixelColor(selector[i], strip.Color(43,255,50)); 
+    //blue rgb = rgba(59,104,231) 
+    //red rgb =  rgba(215,43,134)
     //this is in grb format            
     
     for (int j = 0; j < columns; j++){
@@ -222,12 +296,12 @@ void reFlashArray(){
         strip.setPixelColor(remap[i][j][1], strip.Color(0,0,0));
       }
       if (pixelState[i][j] == 1){
-        strip.setPixelColor(remap[i][j][0], strip.Color(56,56,177));
-        strip.setPixelColor(remap[i][j][1], strip.Color(56,56,177));
+        strip.setPixelColor(remap[i][j][0], strip.Color(20,25,255));
+        strip.setPixelColor(remap[i][j][1], strip.Color(20,25,255));
       } 
       if (pixelState[i][j] == 2) {
-        strip.setPixelColor(remap[i][j][0], strip.Color(62,184,91));
-        strip.setPixelColor(remap[i][j][1], strip.Color(62,184,91));
+        strip.setPixelColor(remap[i][j][0], strip.Color(43,255,60));
+        strip.setPixelColor(remap[i][j][1], strip.Color(43,255,60));
       }
     }
   }
